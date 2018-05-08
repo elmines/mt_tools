@@ -38,6 +38,7 @@ def create_parser():
 
     parser.add_argument("--min-tokens", default=None, metavar="n", type=int, help="Maximum number of tokens per sentence in source and target sentence")
     parser.add_argument("--max-tokens", default=None, metavar="n", type=int, help="Maximum number of tokens per sentence in source and target sentence")
+    parser.add_argument("--max-digits", default=None, metavar="n", type=int, help="Maximum number of digits per sentence in source and target sentence")
     parser.add_argument("--unique", action="store_true", help="Filter out identical sentences")
 
     parser.add_argument("--limit", default=None, metavar="n", type=int, help="Maximum number of sequences to keep")
@@ -56,7 +57,19 @@ def unique_seq(src_lines, dest_lines):
     
     return [src_lines[i] for i in indices], [dest_lines[i] for i in indices]
 
-def main(in_files, out_files, comparator=None, min_tokens=None, max_tokens=None, unique=False, limit=None):
+def exceeds_digits(sentence, n):
+    """
+    sentence - str holding a sentence
+    n - maximum number of digits
+    """
+    num_digits = 0
+    for c in sentence:
+        if c.isdigit():
+            num_digits += 1
+            if num_digits > n: return True
+    return False
+
+def main(in_files, out_files, comparator=None, min_tokens=None, max_tokens=None, max_digits=None, unique=False, limit=None):
     """
     comparator - a comparator function taking two parameters-a source sentence and a target sentence"
     """
@@ -70,8 +83,9 @@ def main(in_files, out_files, comparator=None, min_tokens=None, max_tokens=None,
 
     #Filtering
     conditions = []
-    if min_tokens: conditions.append( lambda sentence: len(sentence.split(" ")) >= min_tokens)
-    if max_tokens: conditions.append( lambda sentence: len(sentence.split(" ")) <= max_tokens)
+    if min_tokens: conditions.append( lambda sentence: len(sentence.split(" ")) >= min_tokens  )
+    if max_tokens: conditions.append( lambda sentence: len(sentence.split(" ")) <= max_tokens  )
+    if max_digits: conditions.append( lambda sentence: not exceeds_digits(sentence, max_digits))
     def sentence_filter(sentence):
         for condition in conditions:
             if not condition(sentence): return False
@@ -114,4 +128,4 @@ if __name__ == "__main__":
     if args.sort_keys:
         comparator = lambda source, target: tuple( sort_key(source, target) for sort_key in args.sort_keys )
 
-    main( args.input, args.output, comparator=comparator, min_tokens=args.min_tokens, max_tokens=args.max_tokens, unique=args.unique, limit=args.limit)
+    main( args.input, args.output, comparator=comparator, min_tokens=args.min_tokens, max_tokens=args.max_tokens, max_digits = args.max_digits, unique=args.unique, limit=args.limit)
