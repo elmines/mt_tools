@@ -1,15 +1,27 @@
 import argparse
 
-condition_dict = {
+comparator_dict = {
     "length-descending": (lambda x, y:  -(len(x) + len(y)) / 2) ,
     "tokens-descending": (lambda x, y: -(len(x.split(" ")) + len(y.split(" "))) / 2) ,
 }    
 
+"""
+filter_dict = {
+    "minimum-tokens": (lambda n: lambda sentence: len(sentence.split(" ") >= n)) ,
+    "maximum-tokens": (lambda n: lambda sentence: len(sentence.split(" ") <= n)) 
+}
+
+filter_args_dict = {
+    "minimum-tokens": 1,
+    "maximum-tokens": 1
+}
+"""
+
 
 def str2key(string):
-    if string not in condition_dict:
+    if string not in comparator_dict:
         raise ValueError("Option %s does not exist" % string)
-    return condition_dict[string]
+    return comparator_dict[string]
 
 def create_parser():
     parser = argparse.ArgumentParser(description="Sort and filter lines from corpora according to certain conditions")
@@ -20,24 +32,19 @@ def create_parser():
     parser.add_argument("--output", required=True, nargs=2, metavar="<path>", help="Paths to filtered source and target corpora")
 
     help_string = "Possible conditions:"
-    for k in condition_dict.keys():
+    for k in comparator_dict.keys():
         help_string += " %s" % k
     parser.add_argument("--sort-keys", nargs="+", metavar="condition", type=str2key, help=help_string)
+
+    parser.add_argument("--min-tokens", default=None, metavar="n", type=int, help="Maximum number of tokens per sentence in source and target sentence")
+    parser.add_argument("--max-tokens", default=None, metavar="n", type=int, help="Maximum number of tokens per sentence in source and target sentence")
 
     parser.add_argument("--limit", default=None, metavar="n", type=int, help="Maximum number of sequences to keep")
 
     return parser
 
-def write_std(string):
-   sys.stdout.write(string)
 
-def write_file(outfile, string):
-   outfile.write(string)
-
-
-    
-
-def main(in_files, out_files, comparator=None, limit=None):
+def main(in_files, out_files, comparator=None, min_tokens=None, max_tokens=None, limit=None):
     """
     comparator - a comparator function taking two parameters-a source sentence and a target sentence"
     """
@@ -45,30 +52,38 @@ def main(in_files, out_files, comparator=None, limit=None):
     with open(in_files[0], "r", encoding="utf-8") as r_source, open(in_files[1], "r", encoding="utf-8") as r_dest:
         source_lines = r_source.readlines()
         dest_lines = r_dest.readlines()
-
-    print(source_lines[:50])
-
     if len(source_lines) != len(dest_lines):
         raise ValueError("Source and target files have unequal number of sequences")
 
-    if not comparator: comparator = lambda source, target : 0
-    
+
+    #Filtering
+    conditions = []
+    if min_tokens: conditions.append( lambda sentence: len(sentence.split(" ")) >= min_tokens)
+    if max_tokens: conditions.append( lambda sentence: len(sentence.split(" ")) <= max_tokens)
+    def sentence_filter(sentence):
+        for condition in conditions:
+            if not condition(sentence): return False
+        return True
+
+    filtered_indices = filter(lambda i: sentence_filter(source_lines[i]) and sentence_filter(dest_lines[i]), range(len(source_lines)))
+    filtered_source = []
+    filtered_dest = []
+    for i in filtered_indices:
+       filtered_source.append(source_lines[i])
+       filtered_dest.append(dest_lines[i])
+
+    #Sorting
+    if comparator:
+        sorted_indices = sorted( range(len(source_lines)), key= lambda i: comparator(source_lines[i], dest_lines[i])  ) 
+        sorted_source = [ source_lines[i] for i in sorted_indices ]
+        sorted_dest = [ dest_lines[i] for i in sorted_indices ]
+    else:
+        sorted_source = filtered_source
+        sorted_dest = filtered_dest
+
     if not limit or limit > len(source_lines): limit = len(source_lines)
-
-    indices = sorted( range(len(source_lines)), key= lambda i: comparator(source_lines[i], dest_lines[i])  ) 
-
-
-    sorted_source = [ source_lines[i] for i in indices ]
-    sorted_dest = [ dest_lines[i] for i in indices ]
-
-    #print(sorted_source[:50])
-    #print(indices[:50])
-
-
     output_source = sorted_source[ :limit]
     output_dest = sorted_dest[ :limit]
-
-    #print(output_source[:50])
 
     with open(out_files[0], "w", encoding="utf-8") as w:
         w.writelines(output_source)
@@ -81,9 +96,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     comparator = None
-    #print(args.sort_keys[0] == condition_dict["length"] )
-    #exit(0)
     if args.sort_keys:
         comparator = lambda source, target: tuple( sort_key(source, target) for sort_key in args.sort_keys )
 
-    main( args.input, args.output, comparator=comparator, limit=args.limit)
+    main( args.input, args.output, comparator=comparator, min_tokens=args.min_tokens, max_tokens=args.max_tokens, limit=args.limit)
